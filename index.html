@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0E7C7B">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Laundry Pay">
+  <meta name="description" content="Track laundry loads Baba owes you.">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Laundry Pay</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <header class="top">
+      <div class="family-photo-wrap">
+        <img class="family-photo" src="family.jpg" alt="Family">
+      </div>
+      <h1>Laundry Pay</h1>
+    </header>
+
+    <section class="owed-card" aria-live="polite">
+      <p class="owed-label">Baba owes</p>
+      <p class="owed-amount" id="owedAmount">$0.00</p>
+    </section>
+
+    <section class="counts" aria-label="Unpaid loads">
+      <div class="count-chip dad">
+        <span class="count-label">Baba's loads</span>
+        <span class="count-num" id="dadCount">0</span>
+      </div>
+      <div class="count-chip family">
+        <span class="count-label">Family loads</span>
+        <span class="count-num" id="familyCount">0</span>
+      </div>
+    </section>
+
+    <section class="add-row" aria-label="Add a load">
+      <button type="button" class="btn btn-dad" id="addDad">
+        Baba's load<br><span class="btn-sub">+$2</span>
+      </button>
+      <button type="button" class="btn btn-family" id="addFamily">
+        Family load<br><span class="btn-sub">+$1</span>
+      </button>
+    </section>
+
+    <section class="action-row">
+      <button type="button" class="btn btn-undo" id="undoBtn" disabled>Undo last add</button>
+      <button type="button" class="btn btn-pay" id="payBtn">Baba paid me</button>
+    </section>
+
+    <section class="history-wrap">
+      <h2>History</h2>
+      <ul class="history" id="historyList"></ul>
+    </section>
+  </div>
+
+  <div class="overlay hidden" id="payOverlay" role="dialog" aria-modal="true" aria-labelledby="payTitle">
+    <div class="sheet">
+      <h2 id="payTitle">Baba paid me</h2>
+      <p class="sheet-owed" id="paySheetOwed">Baba owes $0.00</p>
+      <button type="button" class="btn btn-full" id="payFullBtn">Paid in full</button>
+      <p class="or">or type whole dollars</p>
+      <div class="partial-row">
+        <span class="dollar-prefix">$</span>
+        <input id="payAmount" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="0" maxlength="5" aria-label="Dollars Baba paid">
+        <button type="button" class="btn btn-apply" id="payPartialBtn">Pay this</button>
+      </div>
+      <p class="hint hidden" id="payHint"></p>
+      <button type="button" class="btn btn-cancel" id="payCancel">Cancel</button>
+    </div>
+  </div>
+
+  <div class="overlay hidden" id="confirmOverlay" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+    <div class="sheet">
+      <h2 id="confirmTitle">Paid in full?</h2>
+      <p class="confirm-copy" id="confirmCopy">This zeros every unpaid load. Baba will owe $0.00.</p>
+      <button type="button" class="btn btn-full" id="confirmYes">Yes, paid in full</button>
+      <button type="button" class="btn btn-cancel" id="confirmNo">Go back</button>
+    </div>
+  </div>
+
+  <div class="overlay hidden" id="undoOverlay" role="dialog" aria-modal="true" aria-labelledby="undoTitle">
+    <div class="sheet">
+      <h2 id="undoTitle">Undo that last load?</h2>
+      <p class="confirm-copy">This takes back the last add only.</p>
+      <button type="button" class="btn btn-full" id="undoYes">Yes, undo</button>
+      <button type="button" class="btn btn-cancel" id="undoNo">Keep it</button>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
