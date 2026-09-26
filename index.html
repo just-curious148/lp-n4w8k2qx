@@ -55,6 +55,26 @@
       <button type="button" class="btn btn-pay" id="payBtn">Baba paid me</button>
     </section>
 
+    <section class="report-wrap" aria-labelledby="reportHeading">
+      <div class="report-head">
+        <h2 id="reportHeading">Earnings report</h2>
+        <select id="reportPeriod" aria-label="Report period">
+          <option value="week">This week</option>
+          <option value="month">This month</option>
+          <option value="ytd">Year to date</option>
+        </select>
+      </div>
+      <div class="report-card">
+        <p class="report-title" id="reportTitle"></p>
+        <div class="report-row"><span>Earned from loads</span><strong id="reportEarned">$0.00</strong></div>
+        <p class="report-sub" id="reportLoads"></p>
+        <div class="report-row"><span>Paid by Baba</span><strong id="reportReceived">$0.00</strong></div>
+        <p class="report-sub" id="reportPayments"></p>
+        <div class="report-row report-total"><span>Earned minus paid</span><strong id="reportDiff">$0.00</strong></div>
+        <button type="button" class="btn btn-copy" id="reportCopy">Copy report</button>
+      </div>
+    </section>
+
     <section class="history-wrap">
       <h2>History</h2>
       <ul class="history" id="historyList"></ul>

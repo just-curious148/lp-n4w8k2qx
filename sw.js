@@ -1,4 +1,4 @@
-const CACHE = "laundry-pay-v4";
+const CACHE = "laundry-pay-v6";
 const ASSETS = [
   "./",
   "./index.html",

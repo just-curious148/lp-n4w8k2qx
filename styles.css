@@ -359,3 +359,15 @@ body {
   .history { max-height: 140px; }
   .btn { min-height: 64px; }
 }
+
+/* Earnings report */
+.report-wrap { margin-top: 16px; }
+.report-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.report-head h2 { margin: 0; font-size: 1.1rem; }
+.report-head select { font-size: 1rem; padding: 8px 10px; border-radius: 10px; border: 1px solid #ccd; background: #fff; min-height: 44px; }
+.report-card { background: var(--card); border-radius: 16px; padding: 14px 16px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+.report-title { margin: 0 0 8px; font-weight: 600; opacity: .8; }
+.report-row { display: flex; justify-content: space-between; align-items: baseline; font-size: 1.05rem; margin-top: 6px; }
+.report-sub { margin: 2px 0 0; font-size: .85rem; opacity: .65; }
+.report-total { border-top: 1px solid #e3e3ea; padding-top: 8px; margin-top: 10px; }
+.btn-copy { margin-top: 12px; width: 100%; min-height: 44px; background: #2E5D8A; color: #fff; }
