@@ -77,8 +77,6 @@
     if (k === null) return;
     if (SECRET.test(k) && k !== secret()) {
       localStorage.setItem(SECRET_KEY, k);
-      // Cached events belong to the old secret's book. The outbox holds taps
-      // that never reached any server, so it stays.
       store.events = [];
     }
     history.replaceState(null, "", location.pathname + location.search);
@@ -342,12 +340,12 @@
     if (e.target === els.undoOverlay) closeUndoConfirm();
   });
 
-  /* ---------- Earnings report ---------- */
   function periodRange(key) {
     const now = new Date();
     const y = now.getFullYear();
     if (key === "week") {
-      const start = new Date(y, now.getMonth(), now.getDate() - now.getDay()); // Sunday
+      const daysSinceSunday = now.getDay();
+      const start = new Date(y, now.getMonth(), now.getDate() - daysSinceSunday);
       return { start: start, end: new Date(start.getFullYear(), start.getMonth(), start.getDate() + 7), label: "This week (since Sunday)" };
     }
     if (key === "month") {

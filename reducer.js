@@ -65,7 +65,6 @@
   }
 
   function foldPaid(book, event) {
-    // A leftover $1 cannot retire half of a $2 load, so it waits as credit.
     const usable = Math.min(event.amount, owed(book));
     const dad = Math.min(book.dadUnpaid, Math.floor(usable / DAD_RATE));
     const family = Math.min(book.otherUnpaid, Math.floor((usable - DAD_RATE * dad) / FAMILY_RATE));
@@ -78,9 +77,6 @@
 
   function foldPaidInFull(book, event) {
     if (balanceOf(book) <= 0) return;
-    // The amount is what the payer saw when they tapped. Events from another
-    // device can land before it in the sort, so the book zeros without
-    // reconciling that amount against the folded balance.
     book.dadUnpaid = 0;
     book.otherUnpaid = 0;
     book.credit = 0;
@@ -245,7 +241,6 @@
 
   const api = { project: project, admit: admit, tap: tap, migrationEvents: migrationEvents, money: money };
 
-  // The page loads this as a classic script. Node and the Worker bundle load it as CommonJS.
   if (typeof module === "object" && module.exports) module.exports = api;
   else globalThis.LaundryReducer = api;
 })();
