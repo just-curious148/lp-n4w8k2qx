@@ -1,0 +1,9 @@
+{
+  "name": "laundry-pay-sync",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-30",
+  "durable_objects": {
+    "bindings": [{ "name": "LEDGER", "class_name": "LaundryLedger" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["LaundryLedger"] }]
+}
