@@ -1,8 +1,9 @@
-const CACHE = "laundry-pay-v6";
+const CACHE = "laundry-pay-v7";
 const ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
+  "./reducer.js",
   "./app.js",
   "./manifest.webmanifest",
   "./apple-touch-icon.png",

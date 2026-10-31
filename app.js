@@ -1,11 +1,14 @@
 (function () {
   "use strict";
 
-  const KEY = "laundry-pay-v1";
-  const DAD_RATE = 2;
-  const FAMILY_RATE = 1;
-  const HISTORY_MAX = 40;
-  const UNDO_WINDOW_MS = 2 * 60 * 1000;
+  const R = globalThis.LaundryReducer;
+  const money = R.money;
+  const API_BASE = "https://laundry-pay-sync.enchanted-haumea.workers.dev";
+  const KEY = "laundry-pay-v2";
+  const LEGACY_KEY = "laundry-pay-v1";
+  const SECRET_KEY = "laundry-pay-secret";
+  const SECRET = /^[A-Za-z0-9_-]{8,256}$/;
+  const HISTORY_SHOWN = 40;
 
   const $ = (id) => document.getElementById(id);
 
@@ -42,64 +45,54 @@
     reportCopy: $("reportCopy"),
   };
 
-  function emptyState() {
-    return { dadUnpaid: 0, otherUnpaid: 0, credit: 0, history: [], ledger: [] };
-  }
-
-  function load() {
+  function loadStore() {
     try {
-      const raw = localStorage.getItem(KEY);
-      if (!raw) return emptyState();
-      const data = JSON.parse(raw);
+      const data = JSON.parse(localStorage.getItem(KEY));
       return {
-        dadUnpaid: Math.max(0, Number(data.dadUnpaid) || 0),
-        otherUnpaid: Math.max(0, Number(data.otherUnpaid) || 0),
-        credit: Math.max(0, Number(data.credit) || 0),
-        history: Array.isArray(data.history) ? data.history : [],
-        ledger: Array.isArray(data.ledger) ? data.ledger : seedLedger(data.history),
+        events: Array.isArray(data.events) ? data.events : [],
+        outbox: Array.isArray(data.outbox) ? data.outbox : [],
+        migrated: data.migrated === true,
       };
     } catch (e) {
-      return emptyState();
+      return { events: [], outbox: [], migrated: false };
     }
   }
 
-  /**
-   * Ledger is the uncapped record the earnings report reads
-   * (history is trimmed to the last 40 items for display).
-   * Entries: { t: "load"|"pay", kind?: "dad"|"family", amt, at }.
-   */
-  function seedLedger(history) {
-    if (!Array.isArray(history)) return [];
-    const out = [];
-    history.slice().reverse().forEach(function (h) {
-      if (h.type === "add-dad") out.push({ t: "load", kind: "dad", amt: DAD_RATE, at: h.at });
-      else if (h.type === "add-family") out.push({ t: "load", kind: "family", amt: FAMILY_RATE, at: h.at });
-      else if ((h.type === "pay" || h.type === "pay-full") && Number(h.amount) > 0)
-        out.push({ t: "pay", amt: Number(h.amount), at: h.at });
+  function secret() {
+    return localStorage.getItem(SECRET_KEY);
+  }
+
+  function knownIds() {
+    return new Set(store.events.concat(store.outbox).map(function (event) { return event.id; }));
+  }
+
+  function persist() {
+    const known = knownIds();
+    store.migrated = Boolean(secret()) && legacyIds.every(function (id) { return known.has(id); });
+    localStorage.setItem(KEY, JSON.stringify(store));
+  }
+
+  function adoptSecretFromHash() {
+    const k = new URLSearchParams(location.hash.slice(1)).get("k");
+    if (k === null) return;
+    if (SECRET.test(k) && k !== secret()) {
+      localStorage.setItem(SECRET_KEY, k);
+      store.events = [];
+    }
+    history.replaceState(null, "", location.pathname + location.search);
+  }
+
+  // Re-read on every boot. An app.js still cached by an old service worker in
+  // another tab can write v1 after this device has migrated.
+  function queueLegacy() {
+    const legacy = R.migrationEvents(localStorage.getItem(LEGACY_KEY));
+    const known = knownIds();
+    legacy.forEach(function (event) {
+      if (known.has(event.id)) return;
+      known.add(event.id);
+      store.outbox.push(event);
     });
-    return out;
-  }
-
-  function save(state) {
-    localStorage.setItem(KEY, JSON.stringify(state));
-  }
-
-  function owed(state) {
-    return DAD_RATE * state.dadUnpaid + FAMILY_RATE * state.otherUnpaid;
-  }
-
-  /** Loads owed minus any overpayment credit. Negative means Baba overpaid. */
-  function balance(state) {
-    return owed(state) - (state.credit || 0);
-  }
-
-  function money(n) {
-    n = Number(n);
-    return (n < 0 ? "-$" : "$") + Math.abs(n).toFixed(2);
-  }
-
-  function nowIso() {
-    return new Date().toISOString();
+    return legacy.map(function (event) { return event.id; });
   }
 
   function formatWhen(iso) {
@@ -113,30 +106,11 @@
     });
   }
 
-  function pushHistory(state, item) {
-    state.history.unshift(item);
-    if (state.history.length > HISTORY_MAX) {
-      state.history.length = HISTORY_MAX;
-    }
+  function undoable() {
+    return view.undo !== null && Date.now() < Date.parse(view.undo.expiresAt);
   }
 
-  function lastIsAdd(state) {
-    const last = state.history[0];
-    return last && (last.type === "add-dad" || last.type === "add-family");
-  }
-
-  function lastAddAgeMs(state) {
-    if (!lastIsAdd(state)) return Infinity;
-    const at = Date.parse(state.history[0].at);
-    if (!Number.isFinite(at)) return Infinity;
-    return Date.now() - at;
-  }
-
-  function lastAddIsUndoable(state) {
-    return lastIsAdd(state) && lastAddAgeMs(state) < UNDO_WINDOW_MS;
-  }
-
-  let state = load();
+  let view = null;
   let undoLockTimer = null;
 
   function scheduleUndoLock() {
@@ -144,34 +118,33 @@
       clearTimeout(undoLockTimer);
       undoLockTimer = null;
     }
-    if (!lastAddIsUndoable(state)) return;
-    const remaining = UNDO_WINDOW_MS - lastAddAgeMs(state);
-    if (remaining <= 0) return;
+    if (!undoable()) return;
     undoLockTimer = setTimeout(function () {
       undoLockTimer = null;
       render();
-    }, remaining);
+    }, Date.parse(view.undo.expiresAt) - Date.now());
   }
 
   function render() {
-    const total = balance(state);
+    const total = view.balance;
     els.owedAmount.textContent = money(total);
-    els.dadCount.textContent = String(state.dadUnpaid);
-    els.familyCount.textContent = String(state.otherUnpaid);
-    els.undoBtn.disabled = !lastAddIsUndoable(state);
+    els.dadCount.textContent = String(view.dadUnpaid);
+    els.familyCount.textContent = String(view.otherUnpaid);
+    els.undoBtn.disabled = !undoable();
     els.payBtn.disabled = false;
     els.paySheetOwed.textContent = "Baba owes " + money(total);
     els.payFullBtn.textContent = "Paid in full " + money(total);
 
-    if (!lastAddIsUndoable(state)) closeUndoConfirm();
+    if (!undoable()) closeUndoConfirm();
     scheduleUndoLock();
 
-    if (!state.history.length) {
+    const shown = view.history.slice(0, HISTORY_SHOWN);
+    if (!shown.length) {
       els.historyList.innerHTML = '<li><span class="empty">No loads yet. Tap a button!</span></li>';
       return;
     }
 
-    els.historyList.innerHTML = state.history
+    els.historyList.innerHTML = shown
       .map(function (item) {
         var cls = "dad-item";
         var label = item.label;
@@ -198,80 +171,81 @@
       .replace(/"/g, "&quot;");
   }
 
-  function commit() {
-    save(state);
+  function refresh() {
+    view = R.project(store.events.concat(store.outbox));
     render();
     fillYearOptions();
     renderReport();
   }
 
-  function addLoad(kind) {
-    const rate = kind === "dad" ? DAD_RATE : FAMILY_RATE;
-    // An overpayment credit covers new loads first.
-    const fromCredit = (state.credit || 0) >= rate;
-    if (fromCredit) state.credit -= rate;
-    else if (kind === "dad") state.dadUnpaid += 1;
-    else state.otherUnpaid += 1;
-    pushHistory(state, {
-      type: kind === "dad" ? "add-dad" : "add-family",
-      label: (kind === "dad" ? "Baba's load +$2" : "Family load +$1") + (fromCredit ? " (from extra paid)" : ""),
-      at: nowIso(),
-      fromCredit: fromCredit,
-    });
-    state.ledger.push({ t: "load", kind: kind, amt: rate, at: nowIso() });
-    commit();
+  function record(intent) {
+    const result = R.tap(store.events.concat(store.outbox), intent, crypto.randomUUID(), Date.now());
+    if (result.status !== "appended") return;
+    store.outbox.push(result.event);
+    persist();
+    refresh();
+    flush();
   }
 
-  function undoLastAdd() {
-    if (!lastAddIsUndoable(state)) return;
-    const last = state.history[0];
-    if (last.fromCredit) {
-      state.credit = (state.credit || 0) + (last.type === "add-dad" ? DAD_RATE : FAMILY_RATE);
-    } else if (last.type === "add-dad") {
-      if (state.dadUnpaid < 1) return;
-      state.dadUnpaid -= 1;
-    } else {
-      if (state.otherUnpaid < 1) return;
-      state.otherUnpaid -= 1;
+  async function fetchJson(url, init) {
+    try {
+      const res = await fetch(url, init);
+      return { status: res.status, body: await res.json() };
+    } catch (e) {
+      return null;
     }
-    state.history.shift();
-    for (let i = state.ledger.length - 1; i >= 0; i--) {
-      if (state.ledger[i].t === "load") { state.ledger.splice(i, 1); break; }
-    }
-    commit();
   }
 
-  /**
-   * Pay dad loads first ($2), then family ($1).
-   * Integer loads only so owed always equals 2*dad + 1*family.
-   * Leftover $1 with only dad loads remaining cannot apply (would break a $2 load).
-   */
-  function applyPayment(requested) {
-    const total = owed(state);
-    let remaining = Math.min(Math.max(0, Math.floor(requested)), total);
-    const start = remaining;
-    if (remaining <= 0) return { applied: 0, leftover: 0, dadLoads: 0, familyLoads: 0 };
+  async function sync() {
+    const key = secret();
+    if (!key) return;
+    const api = API_BASE + "/s/" + encodeURIComponent(key) + "/api";
 
-    let dadLoads = 0;
-    let familyLoads = 0;
-
-    while (remaining >= DAD_RATE && state.dadUnpaid > 0) {
-      state.dadUnpaid -= 1;
-      remaining -= DAD_RATE;
-      dadLoads += 1;
+    while (store.outbox.length) {
+      const head = store.outbox[0];
+      const res = await fetchJson(api + "/events", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(head),
+      });
+      if (!res) return;
+      if (res.status === 200 || res.status === 201) {
+        if (!res.body.event || res.body.event.id !== head.id) return;
+        store.events.push(res.body.event);
+      } else if (res.status !== 400 && res.status !== 409) {
+        return;
+      }
+      store.outbox = store.outbox.filter(function (event) { return event.id !== head.id; });
+      persist();
+      refresh();
     }
-    while (remaining >= FAMILY_RATE && state.otherUnpaid > 0) {
-      state.otherUnpaid -= 1;
-      remaining -= FAMILY_RATE;
-      familyLoads += 1;
-    }
 
-    return {
-      applied: start - remaining,
-      leftover: remaining,
-      dadLoads: dadLoads,
-      familyLoads: familyLoads,
-    };
+    const res = await fetchJson(api + "/state");
+    if (!res || res.status !== 200 || !Array.isArray(res.body.events)) return;
+    store.events = res.body.events;
+    const onServer = new Set(store.events.map(function (event) { return event.id; }));
+    store.outbox = store.outbox.filter(function (event) { return !onServer.has(event.id); });
+    persist();
+    refresh();
+  }
+
+  let flushing = false;
+  let flushAgain = false;
+
+  async function flush() {
+    if (flushing) {
+      flushAgain = true;
+      return;
+    }
+    flushing = true;
+    try {
+      do {
+        flushAgain = false;
+        await sync();
+      } while (flushAgain);
+    } finally {
+      flushing = false;
+    }
   }
 
   function payPartial(raw) {
@@ -281,45 +255,12 @@
       showHint("Type a whole-dollar amount.");
       return;
     }
-
-    const result = applyPayment(n);
-    // Anything not used on a whole load is kept as credit, so overpaying
-    // shows a negative balance (owes $10, pays $12, balance -$2).
-    const extra = n - result.applied;
-    state.credit = (state.credit || 0) + extra;
-
-    let label = "Baba paid " + money(n);
-    if (balance(state) < 0) label += " (extra " + money(-balance(state)) + ")";
-
-    pushHistory(state, {
-      type: "pay",
-      label: label,
-      at: nowIso(),
-      amount: n,
-    });
-    state.ledger.push({ t: "pay", amt: n, at: nowIso() });
-    commit();
+    record({ type: "baba_paid", amount: n });
     closePay();
   }
 
   function payInFull() {
-    const total = balance(state);
-    if (total <= 0) {
-      closeConfirm();
-      closePay();
-      return;
-    }
-    state.dadUnpaid = 0;
-    state.otherUnpaid = 0;
-    state.credit = 0;
-    pushHistory(state, {
-      type: "pay-full",
-      label: "Baba paid in full " + money(total),
-      at: nowIso(),
-      amount: total,
-    });
-    state.ledger.push({ t: "pay", amt: total, at: nowIso() });
-    commit();
+    record({ type: "baba_paid_in_full" });
     closeConfirm();
     closePay();
   }
@@ -347,7 +288,7 @@
   }
 
   function openConfirm() {
-    const total = balance(state);
+    const total = view.balance;
     els.confirmCopy.textContent =
       "This zeros every unpaid load. Baba paid " + money(total) + ".";
     els.confirmOverlay.classList.remove("hidden");
@@ -358,7 +299,7 @@
   }
 
   function openUndoConfirm() {
-    if (!lastAddIsUndoable(state)) return;
+    if (!undoable()) return;
     els.undoOverlay.classList.remove("hidden");
   }
 
@@ -366,8 +307,8 @@
     els.undoOverlay.classList.add("hidden");
   }
 
-  els.addDad.addEventListener("click", function () { addLoad("dad"); });
-  els.addFamily.addEventListener("click", function () { addLoad("family"); });
+  els.addDad.addEventListener("click", function () { record({ type: "baba_load" }); });
+  els.addFamily.addEventListener("click", function () { record({ type: "family_load" }); });
   els.undoBtn.addEventListener("click", openUndoConfirm);
   els.payBtn.addEventListener("click", openPay);
   els.payCancel.addEventListener("click", closePay);
@@ -384,7 +325,7 @@
   els.confirmYes.addEventListener("click", payInFull);
   els.confirmNo.addEventListener("click", closeConfirm);
   els.undoYes.addEventListener("click", function () {
-    undoLastAdd();
+    record({ type: "undo" });
     closeUndoConfirm();
   });
   els.undoNo.addEventListener("click", closeUndoConfirm);
@@ -399,12 +340,12 @@
     if (e.target === els.undoOverlay) closeUndoConfirm();
   });
 
-  /* ---------- Earnings report ---------- */
   function periodRange(key) {
     const now = new Date();
     const y = now.getFullYear();
     if (key === "week") {
-      const start = new Date(y, now.getMonth(), now.getDate() - now.getDay()); // Sunday
+      const daysSinceSunday = now.getDay();
+      const start = new Date(y, now.getMonth(), now.getDate() - daysSinceSunday);
       return { start: start, end: new Date(start.getFullYear(), start.getMonth(), start.getDate() + 7), label: "This week (since Sunday)" };
     }
     if (key === "month") {
@@ -421,7 +362,7 @@
   function buildReport(key) {
     const r = periodRange(key);
     const rep = { label: r.label, earned: 0, received: 0, dadLoads: 0, familyLoads: 0, payments: 0 };
-    state.ledger.forEach(function (e) {
+    view.ledger.forEach(function (e) {
       const t = Date.parse(e.at);
       if (!(t >= r.start.getTime() && t < r.end.getTime())) return;
       if (e.t === "load") {
@@ -440,7 +381,7 @@
     if (!sel) return;
     const years = {};
     years[new Date().getFullYear()] = true;
-    state.ledger.forEach(function (e) {
+    view.ledger.forEach(function (e) {
       const d = new Date(e.at);
       if (!isNaN(d)) years[d.getFullYear()] = true;
     });
@@ -486,7 +427,15 @@
     navigator.serviceWorker.register("./sw.js").catch(function () {});
   }
 
-  render();
-  fillYearOptions();
-  renderReport();
+  const store = loadStore();
+  adoptSecretFromHash();
+  const legacyIds = queueLegacy();
+  persist();
+  refresh();
+  flush();
+
+  window.addEventListener("online", flush);
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible") flush();
+  });
 })();
